@@ -1,6 +1,7 @@
 package ft
 
 import (
+	"flag"
 	"sync"
 	"testing"
 )
@@ -9,6 +10,24 @@ func resetFlag(raw string) {
 	flagValue = raw
 	parseOnce = sync.Once{}
 	selected = nil
+}
+
+// setTestShort overrides -test.short for the duration of the test and restores it after.
+func setTestShort(t *testing.T, v bool) {
+	t.Helper()
+	f := flag.Lookup("test.short")
+	if f == nil {
+		t.Skip("test.short flag not registered")
+	}
+	orig := f.Value.String()
+	t.Cleanup(func() { _ = f.Value.Set(orig) })
+	val := "false"
+	if v {
+		val = "true"
+	}
+	if err := f.Value.Set(val); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestHas(t *testing.T) {
@@ -68,6 +87,52 @@ func TestNeedAll_EmptyFlag(t *testing.T) {
 	})
 	if ran {
 		t.Error("expected skip when no tags are enabled")
+	}
+}
+
+func TestShort_FromTestingFlag(t *testing.T) {
+	setTestShort(t, true)
+	resetFlag("")
+	if !Has(Short) {
+		t.Error("Has(Short) = false; want true when testing.Short() is true")
+	}
+	var ran bool
+	t.Run("inner", func(t *testing.T) {
+		NeedAll(t, Short)
+		ran = true
+	})
+	if !ran {
+		t.Error("NeedAll(Short) should not skip when testing.Short() is true")
+	}
+}
+
+func TestShort_FromFTFlagSyncsTestingShort(t *testing.T) {
+	setTestShort(t, false)
+	if testing.Short() {
+		t.Fatal("setup: expected testing.Short() to be false")
+	}
+	resetFlag("short")
+	if !Has(Short) {
+		t.Error("Has(Short) = false; want true when -ft short is set")
+	}
+	if !testing.Short() {
+		t.Error("expected -ft short to set testing.Short() to true")
+	}
+}
+
+func TestShort_NotPresent(t *testing.T) {
+	setTestShort(t, false)
+	resetFlag("integration")
+	if Has(Short) {
+		t.Error("Has(Short) = true; want false (neither -test.short nor -ft short set)")
+	}
+	var ran bool
+	t.Run("inner", func(t *testing.T) {
+		NeedAll(t, Short)
+		ran = true
+	})
+	if ran {
+		t.Error("NeedAll(Short) should skip when short is not enabled")
 	}
 }
 

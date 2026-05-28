@@ -25,6 +25,11 @@ import (
 // Tag is a name used to selectively include tests via the -ft flag.
 type Tag string
 
+// Short is a reserved tag that is bidirectionally synced with testing.Short().
+// If -test.short is set, Has(Short) reports true. If -ft short is passed,
+// the test.short flag is also set to true so testing.Short() reports true.
+const Short Tag = "short"
+
 var (
 	flagValue string
 
@@ -46,24 +51,35 @@ func selectedSet() map[Tag]struct{} {
 			}
 			selected[Tag(t)] = struct{}{}
 		}
+		if _, ok := selected[Short]; ok {
+			if f := flag.Lookup("test.short"); f != nil {
+				_ = f.Value.Set("true")
+			}
+		}
 	})
 	return selected
 }
 
-// Has reports whether the given tag was enabled via the -ft flag.
+// Has reports whether the given tag was enabled via -ft.
+// Has(Short) also returns true when testing.Short() is true.
 func Has(tag Tag) bool {
-	_, ok := selectedSet()[tag]
-	return ok
+	if _, ok := selectedSet()[tag]; ok {
+		return true
+	}
+	if tag == Short && testing.Short() {
+		return true
+	}
+	return false
 }
 
 // NeedAll skips the test unless every provided tag was enabled via -ft.
-// Calling NeedAll with no tags is a no-op.
+// Calling NeedAll with no tags is a no-op. The Short tag is also satisfied
+// by -test.short (see Has).
 func NeedAll(t testing.TB, tags ...Tag) {
 	t.Helper()
-	set := selectedSet()
 	var missing []string
 	for _, tag := range tags {
-		if _, ok := set[tag]; !ok {
+		if !Has(tag) {
 			missing = append(missing, string(tag))
 		}
 	}
