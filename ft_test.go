@@ -157,11 +157,33 @@ func TestAll_Sentinel(t *testing.T) {
 	}
 }
 
-func TestAll_MixedWithOtherTags(t *testing.T) {
+func TestAll_OverriddenByExplicitTags(t *testing.T) {
 	setTestShort(t, false)
-	resetFlag("integration,all")
-	if !Has("postgres") {
-		t.Error("-ft integration,all should still satisfy unrelated tags")
+	resetFlag("unit,all")
+	if !Has("unit") {
+		t.Error(`Has("unit") = false; want true under -ft unit,all`)
+	}
+	for _, tag := range []Tag{"integration", "postgres", "app1"} {
+		if Has(tag) {
+			t.Errorf("Has(%q) = true; -ft unit,all should restrict to explicit tags only", tag)
+		}
+	}
+	if testing.Short() {
+		t.Error("-ft unit,all should not auto-enable testing.Short() since `all` is overridden")
+	}
+}
+
+func TestAll_OverrideKeepsShortIfExplicit(t *testing.T) {
+	setTestShort(t, false)
+	resetFlag("short,all")
+	if !Has(Short) {
+		t.Error("Has(Short) = false; want true under -ft short,all")
+	}
+	if Has("integration") {
+		t.Error(`Has("integration") = true; explicit override should drop "all"`)
+	}
+	if !testing.Short() {
+		t.Error("expected -ft short,all to still flip testing.Short() via the short tag")
 	}
 }
 

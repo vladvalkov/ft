@@ -30,8 +30,10 @@ type Tag string
 // the test.short flag is also set to true so testing.Short() reports true.
 const Short Tag = "short"
 
-// All is a sentinel tag. If passed via -ft (e.g. -ft all), every Has lookup
-// returns true and NeedAll never skips.
+// All is a sentinel tag. -ft all enables every tag: Has returns true for any
+// tag and NeedAll never skips. If combined with explicit tags (e.g.
+// -ft unit,all), the explicit tags take precedence and "all" is dropped,
+// letting you narrow down from a default "all".
 const All Tag = "all"
 
 var (
@@ -54,6 +56,9 @@ func selectedSet() map[Tag]struct{} {
 				continue
 			}
 			selected[Tag(t)] = struct{}{}
+		}
+		if _, allSet := selected[All]; allSet && len(selected) > 1 {
+			delete(selected, All)
 		}
 		_, shortInSet := selected[Short]
 		_, allInSet := selected[All]
