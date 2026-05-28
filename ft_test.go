@@ -136,6 +136,35 @@ func TestShort_NotPresent(t *testing.T) {
 	}
 }
 
+func TestAll_Sentinel(t *testing.T) {
+	setTestShort(t, false)
+	resetFlag("all")
+	for _, tag := range []Tag{"integration", "postgres", "anything", "app1"} {
+		if !Has(tag) {
+			t.Errorf("Has(%q) = false; want true under -ft all", tag)
+		}
+	}
+	var ran bool
+	t.Run("inner", func(t *testing.T) {
+		NeedAll(t, "integration", "postgres", "made-up")
+		ran = true
+	})
+	if !ran {
+		t.Error("NeedAll should not skip under -ft all")
+	}
+	if !testing.Short() {
+		t.Error("-ft all should also enable testing.Short()")
+	}
+}
+
+func TestAll_MixedWithOtherTags(t *testing.T) {
+	setTestShort(t, false)
+	resetFlag("integration,all")
+	if !Has("postgres") {
+		t.Error("-ft integration,all should still satisfy unrelated tags")
+	}
+}
+
 func TestParse_TrimAndSkipEmpty(t *testing.T) {
 	resetFlag("  ,, foo ,bar,  ,baz,")
 	set := selectedSet()
