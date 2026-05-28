@@ -13,6 +13,7 @@
 //	}
 //
 // Run with: go test ./... -ft integration,app1
+// Forbid a tag (overrides all): go test ./... -ft all,!postgres
 package ft
 
 import (
@@ -33,7 +34,8 @@ const Short Tag = "short"
 // All is a sentinel tag. -ft all enables every tag: Has returns true for any
 // tag and NeedAll never skips. If combined with explicit tags (e.g.
 // -ft unit,all), the explicit tags take precedence and "all" is dropped,
-// letting you narrow down from a default "all".
+// letting you narrow down from a default "all". Forbidden tags (!tag) always
+// override "all".
 const All Tag = "all"
 
 var (
@@ -41,45 +43,60 @@ var (
 
 	parseOnce sync.Once
 	selected  map[Tag]struct{}
+	forbidden map[Tag]struct{}
 )
 
 func init() {
-	flag.StringVar(&flagValue, "ft", "", "comma-separated list of ft test tags to enable")
+	flag.StringVar(&flagValue, "ft", "", "comma-separated list of ft test tags; prefix with ! to forbid (e.g. -ft all,!postgres)")
 }
 
-func selectedSet() map[Tag]struct{} {
+func parse() {
 	parseOnce.Do(func() {
 		selected = make(map[Tag]struct{})
+		forbidden = make(map[Tag]struct{})
 		for _, raw := range strings.Split(flagValue, ",") {
 			t := strings.TrimSpace(raw)
 			if t == "" {
 				continue
 			}
-			selected[Tag(t)] = struct{}{}
+			if strings.HasPrefix(t, "!") {
+				name := strings.TrimSpace(t[1:])
+				if name == "" {
+					continue
+				}
+				forbidden[Tag(name)] = struct{}{}
+			} else {
+				selected[Tag(t)] = struct{}{}
+			}
 		}
+		// Forbidden tags don't count as explicit tags for the override check.
 		if _, allSet := selected[All]; allSet && len(selected) > 1 {
 			delete(selected, All)
 		}
 		_, shortInSet := selected[Short]
 		_, allInSet := selected[All]
-		if shortInSet || allInSet {
+		_, shortForbidden := forbidden[Short]
+		if (shortInSet || allInSet) && !shortForbidden {
 			if f := flag.Lookup("test.short"); f != nil {
 				_ = f.Value.Set("true")
 			}
 		}
 	})
-	return selected
 }
 
 // Has reports whether the given tag was enabled via -ft.
-// Has returns true for every tag if -ft all is set.
+// A forbidden tag (!tag) always returns false, overriding everything.
+// Has returns true for every tag if -ft all is set (and the tag isn't forbidden).
 // Has(Short) also returns true when testing.Short() is true.
 func Has(tag Tag) bool {
-	set := selectedSet()
-	if _, ok := set[All]; ok {
+	parse()
+	if _, ok := forbidden[tag]; ok {
+		return false
+	}
+	if _, ok := selected[All]; ok {
 		return true
 	}
-	if _, ok := set[tag]; ok {
+	if _, ok := selected[tag]; ok {
 		return true
 	}
 	if tag == Short && testing.Short() {
@@ -90,16 +107,26 @@ func Has(tag Tag) bool {
 
 // NeedAll skips the test unless every provided tag was enabled via -ft.
 // Calling NeedAll with no tags is a no-op. The Short tag is also satisfied
-// by -test.short (see Has).
+// by -test.short (see Has). A forbidden tag (!tag) causes an immediate skip.
 func NeedAll(t testing.TB, tags ...Tag) {
 	t.Helper()
-	var missing []string
+	parse()
+	var forbid, missing []string
 	for _, tag := range tags {
-		if !Has(tag) {
+		if _, ok := forbidden[tag]; ok {
+			forbid = append(forbid, string(tag))
+		} else if !Has(tag) {
 			missing = append(missing, string(tag))
 		}
 	}
+	var reasons []string
+	if len(forbid) > 0 {
+		reasons = append(reasons, "forbidden tag(s): "+strings.Join(forbid, ", "))
+	}
 	if len(missing) > 0 {
-		t.Skipf("ft: skipping; missing required tag(s): %s", strings.Join(missing, ", "))
+		reasons = append(reasons, "missing required tag(s): "+strings.Join(missing, ", "))
+	}
+	if len(reasons) > 0 {
+		t.Skipf("ft: skipping; %s", strings.Join(reasons, "; "))
 	}
 }
