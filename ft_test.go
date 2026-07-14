@@ -256,6 +256,42 @@ func TestForbid_DoesNotCountAsExplicitOverrideOfAll(t *testing.T) {
 	}
 }
 
+func TestEnv_UsedWhenFlagEmpty(t *testing.T) {
+	t.Setenv("FT", "integration,app1")
+	resetFlag("")
+	for _, tag := range []Tag{"integration", "app1"} {
+		if !Has(tag) {
+			t.Errorf("Has(%q) = false; want true from FT env", tag)
+		}
+	}
+	if Has("postgres") {
+		t.Error(`Has("postgres") = true; want false`)
+	}
+}
+
+func TestEnv_FlagTakesPrecedence(t *testing.T) {
+	t.Setenv("FT", "postgres")
+	resetFlag("integration")
+	if !Has("integration") {
+		t.Error(`Has("integration") = false; want true from flag`)
+	}
+	if Has("postgres") {
+		t.Error(`Has("postgres") = true; non-empty flag should override FT env`)
+	}
+}
+
+func TestEnv_SupportsForbidAndAll(t *testing.T) {
+	setTestShort(t, false)
+	t.Setenv("FT", "all,!postgres")
+	resetFlag("")
+	if Has("postgres") {
+		t.Error(`Has("postgres") = true; want false (forbidden via env)`)
+	}
+	if !Has("anything") {
+		t.Error(`Has("anything") = false; want true under FT=all,!postgres`)
+	}
+}
+
 func TestForbid_Short(t *testing.T) {
 	setTestShort(t, true)
 	resetFlag("all,!short")

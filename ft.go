@@ -14,10 +14,20 @@
 //
 // Run with: go test ./... -ft integration,app1
 // Forbid a tag (overrides all): go test ./... -ft all,!postgres
+//
+// Tags can also come from the FT environment variable:
+//
+//	FT=integration,app1 go test ./...
+//
+// The env var makes ft usable across a whole repo: -ft is registered
+// per test binary, so passing it to `go test ./...` fails for packages
+// that never import ft, while FT reaches only the binaries that look
+// for it. A non-empty -ft flag takes precedence over FT.
 package ft
 
 import (
 	"flag"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -52,10 +62,14 @@ func init() {
 
 func parse() {
 	parseOnce.Do(func() {
+		raw := flagValue
+		if raw == "" {
+			raw = os.Getenv("FT")
+		}
 		selected = make(map[Tag]struct{})
 		forbidden = make(map[Tag]struct{})
-		for _, raw := range strings.Split(flagValue, ",") {
-			t := strings.TrimSpace(raw)
+		for _, part := range strings.Split(raw, ",") {
+			t := strings.TrimSpace(part)
 			if t == "" {
 				continue
 			}
